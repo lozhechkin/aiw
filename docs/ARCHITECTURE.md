@@ -9,6 +9,7 @@ The workspace is a document tree. It can live locally or under Google Drive for 
 | Handoff | Records the last verified state and the next action |
 | Repository link | A `REPOSITORY` file holds one HTTPS GitHub URL without credentials |
 | Bootstrap CLI | Creates the tree, links repositories, clones them, and checks the layout |
+| API adapters | Google Docs reads and guarded append use the Docs API. GitHub status uses a read-only GitHub CLI command. |
 | External tools | Drive for desktop syncs files. Git and GitHub handle branches, PRs, and code history |
 
 The CLI refuses to initialize a nonempty folder or clone inside the workspace. Authentication stays with Git, GitHub, or Google Drive. The layout check validates local files and URL format. Drive sync and access to a remote repository are verified separately during the walkthrough.

@@ -28,9 +28,12 @@ Open the workspace in Drive to verify synchronization. Then follow the [Drive an
 - Links a project to a GitHub repository and clones it outside the workspace.
 - Uses Drive for desktop for file sync and your existing Git credentials for GitHub.
 - Checks the local layout and the format of saved repository URLs without writing.
+- Optionally reads a native Google Doc, appends text with a revision guard and readback, and reports a GitHub PR head and CI checks.
 
-Drive synchronization is managed by Google Drive for desktop. GitHub pull requests are opened in GitHub or with your authenticated GitHub CLI. Hosted Google Docs, provider connectors, and scheduled automation are described in the [roadmap](docs/ROADMAP.md).
+Drive synchronization is managed by Google Drive for desktop. GitHub pull requests are opened in GitHub or with your authenticated GitHub CLI. See [integrations](docs/INTEGRATIONS.md) for optional native Docs and PR reporting. Scheduled automation and richer integrations are described in the [roadmap](docs/ROADMAP.md).
 
 A local-only pilot remains available. Choose a local root and omit `--github` and `clone`.
 
 [Architecture](docs/ARCHITECTURE.md) · [Release notes](CHANGELOG.md)
+
+Released under the [MIT License](LICENSE), covering the code, documentation, and templates in this release.

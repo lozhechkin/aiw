@@ -2,10 +2,13 @@
 """Create and check a local, file-based workspace for AI-assisted projects."""
 
 import argparse
+import json
 from pathlib import Path
 import re
 import subprocess
 import sys
+
+import integrations
 
 VERSION = "0.1.0"
 TEMPLATES = Path(__file__).resolve().parent / "templates"
@@ -136,9 +139,29 @@ def main(argv=None):
             cli.add_argument("--github", help="link an HTTPS GitHub repository")
         if command == "clone":
             cli.add_argument("destination", type=Path)
+    cli = sub.add_parser("docs-read", help="read a Google Doc and its current revision")
+    cli.add_argument("document_id")
+    cli = sub.add_parser("docs-append", help="append stdin to a Google Doc with a revision guard")
+    cli.add_argument("document_id")
+    cli.add_argument("--revision", required=True)
+    cli = sub.add_parser("pr-status", help="report a GitHub PR head and its CI checks")
+    cli.add_argument("repository", help="owner/repository")
+    cli.add_argument("number", type=int)
     args = parser.parse_args(argv)
-    root = args.root.expanduser()
     try:
+        if args.command == "docs-read":
+            print(json.dumps(integrations.document_snapshot(args.document_id), ensure_ascii=False))
+            return 0
+        if args.command == "docs-append":
+            print(json.dumps(integrations.append_document(args.document_id, args.revision, sys.stdin.read())))
+            return 0
+        if args.command == "pr-status":
+            if args.number < 1 or not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", args.repository):
+                raise ValueError("Use owner/repository and a positive PR number.")
+            github_url("https://github.com/" + args.repository)
+            print(json.dumps(integrations.pull_request_report(args.repository, args.number), indent=2))
+            return 0
+        root = args.root.expanduser()
         if args.command == "init":
             init(root)
         elif args.command == "new":
