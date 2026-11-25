@@ -4,12 +4,14 @@
 import argparse
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 VERSION = "0.1.0"
 TEMPLATES = Path(__file__).resolve().parent / "templates"
 DIRECTORIES = ("00 Inbox", "10 Projects", "20 Library", "30 Templates", "90 Archive", "99 System")
 PROJECT_FILES = ("PROJECT.md", "TASKS.md", "HANDOFF.md")
+GITHUB_URL = re.compile(r"https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", re.ASCII)
 SLUG = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", re.ASCII)
 
 
@@ -41,20 +43,60 @@ def init(root):
     print(f"Workspace created: {root}")
 
 
-def new_project(root, slug):
+def project_slug(slug):
     if len(slug) > 63 or not SLUG.fullmatch(slug):
         raise ValueError("Use a project slug such as podcast-site, up to 63 characters.")
+    return slug
+
+
+def github_url(value):
+    if not GITHUB_URL.fullmatch(value) or value.rsplit("/", 1)[1] in (".", "..", ".git"):
+        raise ValueError("Use a GitHub HTTPS repository URL without credentials, query, or fragment.")
+    return value
+
+
+def projects_directory(root):
     require_directory(root)
     require_file(root / "AGENTS.md")
     projects = root / "10 Projects"
     require_directory(projects)
+    return projects
+
+
+def new_project(root, slug, github=None):
+    project_slug(slug)
+    projects = projects_directory(root)
+    if github is not None:
+        github_url(github)
     texts = {name: template(name).replace("{{project}}", slug) for name in PROJECT_FILES}
+    if github:
+        texts["REPOSITORY"] = github + "\n"
+        texts["PROJECT.md"] += "\n## Code repository\n\n" + github + "\n"
     project = projects / slug
     project.mkdir()
     for name, value in texts.items():
         with (project / name).open("x", encoding="utf-8") as handle:
             handle.write(value)
     print(f"Project created: {project}")
+
+
+def repository_url(project):
+    link = project / "REPOSITORY"
+    require_file(link)
+    return github_url(link.read_text(encoding="utf-8").strip())
+
+
+def clone_project(root, slug, destination):
+    project = projects_directory(root) / project_slug(slug)
+    require_directory(project)
+    url = repository_url(project)
+    if destination.exists() or destination.is_symlink():
+        raise ValueError(f"Clone destination must be new: {destination}")
+    require_directory(destination.parent)
+    if destination.resolve().is_relative_to(root.resolve()):
+        raise ValueError("Keep Git clones outside the synced workspace.")
+    subprocess.run(["git", "clone", "--", url, str(destination)], check=True)
+    print(f"Repository cloned: {destination}")
 
 
 def check(root):
@@ -69,6 +111,9 @@ def check(root):
         require_directory(project)
         for name in PROJECT_FILES:
             require_file(project / name)
+        link = project / "REPOSITORY"
+        if link.exists() or link.is_symlink():
+            repository_url(project)
         count += 1
     print(f"Workspace layout is valid ({count} project(s)).")
 
@@ -81,21 +126,28 @@ def main(argv=None):
         ("init", "initialize a new or empty folder"),
         ("new", "create a project without replacing any existing files"),
         ("check", "check the workspace layout without writing"),
+        ("clone", "clone the linked GitHub repository outside the workspace"),
     ):
         cli = sub.add_parser(command, help=help_text)
         cli.add_argument("root", type=Path)
-        if command == "new":
+        if command in ("new", "clone"):
             cli.add_argument("slug")
+        if command == "new":
+            cli.add_argument("--github", help="link an HTTPS GitHub repository")
+        if command == "clone":
+            cli.add_argument("destination", type=Path)
     args = parser.parse_args(argv)
     root = args.root.expanduser()
     try:
         if args.command == "init":
             init(root)
         elif args.command == "new":
-            new_project(root, args.slug)
+            new_project(root, args.slug, args.github)
+        elif args.command == "clone":
+            clone_project(root, args.slug, args.destination.expanduser())
         else:
             check(root)
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"AIWorkspace: {error}", file=sys.stderr)
         return 1
     return 0

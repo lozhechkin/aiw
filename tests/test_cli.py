@@ -1,8 +1,10 @@
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 CLI = Path(__file__).resolve().parents[1] / "aiworkspace.py"
 
@@ -49,6 +51,41 @@ class WorkspaceTest(unittest.TestCase):
     def test_refuses_invalid_slug(self):
         self.assertEqual(self.call("init", self.root).returncode, 0)
         self.assertEqual(self.call("new", self.root, "../elsewhere").returncode, 1)
+        self.assertEqual(list((self.root / "10 Projects").iterdir()), [])
+
+    def test_github_link_and_clone_with_local_git_transport(self):
+        repo = self.temp / "remote"
+        repo.mkdir()
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        (repo / "README.md").write_text("Pilot")
+        subprocess.run(["git", "-C", str(repo), "add", "README.md"], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "user.name=Pilot",
+                        "-c", "user.email=pilot@example.invalid", "commit", "-m", "Pilot"],
+                       check=True, capture_output=True)
+        url = "https://github.com/example/pilot"
+        self.assertEqual(self.call("init", self.root).returncode, 0)
+        self.assertEqual(self.call("new", self.root, "demo", "--github", url).returncode, 0)
+        self.assertEqual(self.call("check", self.root).returncode, 0)
+        project = self.root / "10 Projects" / "demo"
+        self.assertEqual((project / "REPOSITORY").read_text().strip(), url)
+        self.assertIn(url, (project / "PROJECT.md").read_text())
+        self.assertEqual(self.call("clone", self.root, "demo", self.root / "checkout").returncode, 1)
+        checkout = self.temp / "checkout"
+        with patch.dict(os.environ, {"GIT_CONFIG_COUNT": "1",
+                                     "GIT_CONFIG_KEY_0": f"url.{repo.as_uri()}.insteadOf",
+                                     "GIT_CONFIG_VALUE_0": url}):
+            result = self.call("clone", self.root, "demo", checkout)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((checkout / "README.md").read_text(), "Pilot")
+
+    def test_github_url_cannot_carry_credentials(self):
+        self.assertEqual(self.call("init", self.root).returncode, 0)
+        for url in ("https://user@github.com/example/pilot", "https://github.com/example/pilot?x=y",
+                    "https://example.org/example/pilot", "https://github.com/example/.."):
+            with self.subTest(url=url):
+                result = self.call("new", self.root, "demo", "--github", url)
+                self.assertEqual(result.returncode, 1)
+                self.assertNotIn(url, result.stderr)
         self.assertEqual(list((self.root / "10 Projects").iterdir()), [])
 
     def test_check_reports_missing_file_without_writing(self):

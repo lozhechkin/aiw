@@ -1,15 +1,16 @@
 # Architecture
 
-A workspace is a folder. The built-in commands work on local files and leave model selection, sharing, and automation to the owner.
+The workspace is a document tree. It can live locally or under Google Drive for desktop. Source code stays in a separate Git clone. The CLI uses local file operations and the installed Git client.
 
 | Layer | Responsibility |
 | --- | --- |
-| Workspace rules | Tell an assistant what to read, where it may work, and when it needs permission |
-| Project brief | Describes the goal, authoritative inputs, decisions, and limits |
-| Task list | Gives an owner, outcome, evidence, and next action |
-| Handoff | Records the last verified state for the next chat |
-| Bootstrap CLI | Copies the English templates into an empty workspace and checks the layout |
+| Workspace rules | Tell an assistant where to begin and what access is required |
+| Project brief and task list | Record the goal, inputs, owner, decisions, and acceptance evidence |
+| Handoff | Records the last verified state and the next action |
+| Repository link | A `REPOSITORY` file holds one HTTPS GitHub URL without credentials |
+| Bootstrap CLI | Creates the tree, links repositories, clones them, and checks the layout |
+| External tools | Drive for desktop syncs files. Git and GitHub handle branches, PRs, and code history |
 
-The CLI refuses to initialize a nonempty folder or overwrite a project. A layout check confirms the expected files and directories. It cannot establish that their content is accurate or that an assistant actually has access.
+The CLI refuses to initialize a nonempty folder or clone inside the workspace. Authentication stays with Git, GitHub, or Google Drive. The layout check validates local files and URL format. Drive sync and access to a remote repository are verified separately during the walkthrough.
 
-Keep the release and your workspace in separate directories. You can put a project under version control or use a synced folder after choosing who can access it. Integrate one service at a time and verify reading and writing with a non-sensitive example before relying on it.
+Use a scoped workspace folder and a non-sensitive sample when connecting an assistant. Project files are the handoff between assistants and the place to record which code changes they are discussing.
