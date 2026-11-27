@@ -5,12 +5,13 @@ import argparse
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 
 import integrations
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 TEMPLATES = Path(__file__).resolve().parent / "templates"
 DIRECTORIES = ("00 Inbox", "10 Projects", "20 Library", "30 Templates", "90 Archive", "99 System")
 PROJECT_FILES = ("PROJECT.md", "TASKS.md", "HANDOFF.md")
@@ -121,6 +122,71 @@ def check(root):
     print(f"Workspace layout is valid ({count} project(s)).")
 
 
+def doctor(root, workspace_parent, require_git=False):
+    failures = []
+    if root is not None:
+        try:
+            check(root)
+        except (OSError, ValueError) as error:
+            failures.append(str(error))
+    if workspace_parent is not None:
+        try:
+            require_directory(workspace_parent)
+            print(f"Workspace parent available: {workspace_parent}")
+        except ValueError as error:
+            failures.append(str(error))
+    git = shutil.which("git")
+    print("Git available." if git else "Git unavailable. Install Git before using GitHub.")
+    if require_git and not git:
+        failures.append("Git is required for this setup.")
+    if failures:
+        raise ValueError(" ".join(failures))
+
+
+def setup(root, slug, github=None, destination=None):
+    project_slug(slug)
+    if github is not None:
+        github_url(github)
+    require_directory(root.parent)
+    existing_checkout = False
+    if destination is not None:
+        if github is None:
+            raise ValueError("--checkout requires --github.")
+        if not shutil.which("git"):
+            raise ValueError("Install Git before using --checkout.")
+        require_directory(destination.parent)
+        if destination.resolve().is_relative_to(root.resolve()):
+            raise ValueError("Keep Git clones outside the synced workspace.")
+        if destination.exists() or destination.is_symlink():
+            require_directory(destination)
+            checkout = subprocess.run(
+                ["git", "-C", str(destination), "rev-parse", "--show-toplevel"],
+                capture_output=True, text=True,
+            )
+            remote = subprocess.run(
+                ["git", "-C", str(destination), "config", "--local", "--get-all", "remote.origin.url"],
+                capture_output=True, text=True,
+            )
+            if (checkout.returncode or Path(checkout.stdout.strip()).resolve() != destination.resolve()
+                    or remote.returncode or remote.stdout.splitlines() != [github]):
+                raise ValueError("Existing checkout must be a Git root with the expected origin.")
+            existing_checkout = True
+    if not root.is_symlink() and (not root.exists() or (root.is_dir() and not any(root.iterdir()))):
+        init(root)
+    check(root)
+    project = projects_directory(root) / slug
+    if not project.exists():
+        new_project(root, slug, github)
+    elif github is not None and repository_url(project) != github:
+        raise ValueError("Project already links to a different GitHub repository.")
+    if destination is not None:
+        if existing_checkout:
+            print(f"Existing checkout verified: {destination}")
+        else:
+            clone_project(root, slug, destination)
+    check(root)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", action="version", version=VERSION)
@@ -139,6 +205,15 @@ def main(argv=None):
             cli.add_argument("--github", help="link an HTTPS GitHub repository")
         if command == "clone":
             cli.add_argument("destination", type=Path)
+    cli = sub.add_parser("doctor", help="diagnose local setup without writing")
+    cli.add_argument("--root", type=Path)
+    cli.add_argument("--workspace-parent", type=Path)
+    cli.add_argument("--require-git", action="store_true")
+    cli = sub.add_parser("setup", help="initialize a workspace and create or reuse one project")
+    cli.add_argument("root", type=Path)
+    cli.add_argument("slug")
+    cli.add_argument("--github")
+    cli.add_argument("--checkout", type=Path, help="clone or verify the Git checkout outside the workspace")
     cli = sub.add_parser("docs-read", help="read a Google Doc and its current revision")
     cli.add_argument("document_id")
     cli = sub.add_parser("docs-append", help="append stdin to a Google Doc with a revision guard")
@@ -161,7 +236,15 @@ def main(argv=None):
             github_url("https://github.com/" + args.repository)
             print(json.dumps(integrations.pull_request_report(args.repository, args.number), indent=2))
             return 0
+        if args.command == "doctor":
+            doctor(args.root.expanduser() if args.root else None,
+                   args.workspace_parent.expanduser() if args.workspace_parent else None,
+                   args.require_git)
+            return 0
         root = args.root.expanduser()
+        if args.command == "setup":
+            setup(root, args.slug, args.github, args.checkout.expanduser() if args.checkout else None)
+            return 0
         if args.command == "init":
             init(root)
         elif args.command == "new":

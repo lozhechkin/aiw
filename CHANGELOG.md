@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.0
+
+- Added a read-only setup doctor for local Drive paths and Git availability.
+- Added a repeatable setup command that preserves existing project files and refuses a conflicting repository link. It can also clone or verify a checkout in the same command.
+
 ## 0.1.0
 
 - Initial English-language local starter.
