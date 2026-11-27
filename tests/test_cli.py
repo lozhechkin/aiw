@@ -22,7 +22,22 @@ class WorkspaceTest(unittest.TestCase):
         )
 
     def test_version(self):
-        self.assertEqual(self.call("--version").stdout.strip(), "0.1.0")
+        self.assertEqual(self.call("--version").stdout.strip(), "0.2.0")
+
+    def test_setup_can_resume_without_overwriting(self):
+        self.root.mkdir()
+        url = "https://github.com/example/pilot"
+        self.assertEqual(self.call("setup", self.root, "demo", "--github", url).returncode, 0)
+        brief = self.root / "10 Projects" / "demo" / "PROJECT.md"
+        brief.write_text("Keep my edits")
+        self.assertEqual(self.call("setup", self.root, "demo", "--github", url).returncode, 0)
+        self.assertEqual(self.call("setup", self.root, "demo", "--github", url + "2").returncode, 1)
+        self.assertEqual(brief.read_text(), "Keep my edits")
+
+    def test_doctor_checks_parent_without_creating_it(self):
+        self.assertEqual(self.call("doctor", "--workspace-parent", self.temp).returncode, 0)
+        self.assertEqual(self.call("doctor", "--workspace-parent", self.root).returncode, 1)
+        self.assertFalse(self.root.exists())
 
     def test_lifecycle(self):
         self.assertEqual(self.call("init", self.root).returncode, 0)
@@ -77,6 +92,28 @@ class WorkspaceTest(unittest.TestCase):
             result = self.call("clone", self.root, "demo", checkout)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((checkout / "README.md").read_text(), "Pilot")
+        setup_root = self.temp / "setup workspace"
+        setup_checkout = self.temp / "setup checkout"
+        with patch.dict(os.environ, {"GIT_CONFIG_COUNT": "1",
+                                     "GIT_CONFIG_KEY_0": f"url.{repo.as_uri()}.insteadOf",
+                                     "GIT_CONFIG_VALUE_0": url}):
+            result = self.call("setup", setup_root, "demo", "--github", url, "--checkout", setup_checkout)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((setup_checkout / "README.md").read_text(), "Pilot")
+
+    def test_setup_reuses_checkout_and_rejects_unrelated_directory(self):
+        url = "https://github.com/example/pilot"
+        checkout = self.temp / "checkout"
+        checkout.mkdir()
+        args = ("setup", self.root, "demo", "--github", url, "--checkout", checkout)
+        self.assertEqual(self.call(*args).returncode, 1)
+        self.assertFalse(self.root.exists())
+        subprocess.run(["git", "init", str(checkout)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(checkout), "remote", "add", "origin", url], check=True)
+        for _ in range(2):
+            result = self.call(*args)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Existing checkout verified", result.stdout)
 
     def test_github_url_cannot_carry_credentials(self):
         self.assertEqual(self.call("init", self.root).returncode, 0)
